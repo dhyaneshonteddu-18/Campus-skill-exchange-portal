@@ -2,12 +2,20 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const path = require('path');
-const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
+const multer = require('multer');
 require('dotenv').config();
+
+// Import repositories
+const userRepository = require('./models/userRepository');
+const skillRepository = require('./models/skillRepository');
+const materialRepository = require('./models/materialRepository');
+const requestRepository = require('./models/requestRepository');
+const s3Service = require('./services/s3Service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const USE_MOCK_DATA = process.env.USE_MOCK_DATA === 'true';
+const S3_BUCKET = process.env.S3_BUCKET_NAME || 'campus-skill-exchange-materials';
 
 // Middleware
 app.use(cors());
@@ -15,71 +23,19 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Mock Database
-const db = {
-  users: {
-    'user1': {
-      userId: 'user1',
-      name: 'Rahul Kumar',
-      email: 'rahul@college.edu',
-      passwordHash: bcrypt.hashSync('password123', 10),
-      department: 'Computer Science',
-      year: '3rd',
-      bio: 'Passionate about web development and AI',
-      createdAt: new Date().toISOString()
-    },
-    'user2': {
-      userId: 'user2',
-      name: 'Priya Singh',
-      email: 'priya@college.edu',
-      passwordHash: bcrypt.hashSync('password123', 10),
-      department: 'Information Technology',
-      year: '2nd',
-      bio: 'Expert in data science and Python',
-      createdAt: new Date().toISOString()
-    },
-    'user3': {
-      userId: 'user3',
-      name: 'Amit Patel',
-      email: 'amit@college.edu',
-      passwordHash: bcrypt.hashSync('password123', 10),
-      department: 'Electronics',
-      year: '1st',
-      bio: 'Learning web development',
-      createdAt: new Date().toISOString()
-    }
-  },
-  skills: {
-    'skill1': { skillId: 'skill1', userId: 'user1', skillName: 'Python', description: 'Python fundamentals, data structures, OOP', createdAt: new Date().toISOString() },
-    'skill2': { skillId: 'skill2', userId: 'user2', skillName: 'Data Science', description: 'Machine learning and data analysis', createdAt: new Date().toISOString() },
-    'skill3': { skillId: 'skill3', userId: 'user1', skillName: 'Web Development', description: 'Full-stack web development with Node.js', createdAt: new Date().toISOString() },
-    'skill4': { skillId: 'skill4', userId: 'user2', skillName: 'SQL', description: 'Database design and SQL queries', createdAt: new Date().toISOString() }
-  },
-  requests: {},
-  materials: {
-    'material1': {
-      materialId: 'material1',
-      userId: 'user1',
-      title: 'Java',
-      description: 'Master Java programming fundamentals',
-      fileName: 'AWS_architecture.png',
-      s3Key: 'materials/user1/AWS_architecture.png',
-      fileUrl: '/files/material1',
-      createdAt: new Date().toISOString()
-    },
-    'material2': {
-      materialId: 'material2',
-      userId: 'user2',
-      title: 'Python Basics',
-      description: 'Introduction to Python programming',
-      fileName: 'python_guide.pdf',
-      s3Key: 'materials/user2/python_guide.pdf',
-      fileUrl: '/files/material2',
-      createdAt: new Date().toISOString()
+// Multer setup for file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'image/png', 'image/jpeg'];
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('File type not allowed'));
     }
   }
-};
-
+});
 
 // ===== GET PAGES =====
 app.get('/', (req, res) => {
@@ -87,7 +43,7 @@ app.get('/', (req, res) => {
 });
 
 // ===== AUTHENTICATION =====
-app.post('/api/register', (req, res) => {
+app.post('/api/register', async (req, res) => {
   try {
     const { name, email, password, department, year, bio } = req.body;
 
@@ -99,34 +55,27 @@ app.post('/api/register', (req, res) => {
       return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
     }
 
-    if (Object.values(db.users).some(u => u.email === email)) {
+    // Check if email already exists
+    const existingUser = await userRepository.getUserByEmail(email);
+    if (existingUser) {
       return res.status(400).json({ success: false, message: 'Email already registered' });
     }
 
-    const userId = uuidv4();
-    db.users[userId] = {
-      userId,
-      name,
-      email,
-      passwordHash: bcrypt.hashSync(password, 10),
-      department,
-      year,
-      bio: bio || '',
-      createdAt: new Date().toISOString()
-    };
+    const user = await userRepository.createUser(email, password, name, department, year, bio);
 
     res.status(201).json({
       success: true,
       message: 'Registration successful',
-      userId,
-      user: { userId, name, email, department, year, bio }
+      userId: user.userId,
+      user
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Registration failed' });
+    console.error('Registration error:', error);
+    res.status(500).json({ success: false, message: 'Registration failed', error: error.message });
   }
 });
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -134,8 +83,8 @@ app.post('/api/login', (req, res) => {
       return res.status(400).json({ success: false, message: 'Email and password required' });
     }
 
-    const user = Object.values(db.users).find(u => u.email === email);
-    if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
+    const user = await userRepository.authenticateUser(email, password);
+    if (!user) {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
@@ -143,40 +92,41 @@ app.post('/api/login', (req, res) => {
       success: true,
       message: 'Login successful',
       userId: user.userId,
-      user: { userId: user.userId, name: user.name, email: user.email, department: user.department, year: user.year, bio: user.bio }
+      user
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Login failed' });
+    console.error('Login error:', error);
+    res.status(500).json({ success: false, message: 'Login failed', error: error.message });
   }
 });
 
 // ===== SKILLS =====
-app.get('/api/skills', (req, res) => {
+app.get('/api/skills', async (req, res) => {
   try {
     const { search } = req.query;
-    let skills = Object.values(db.skills);
+    const skills = await skillRepository.getAllSkills(search);
 
-    if (search) {
-      skills = skills.filter(s => 
-        s.skillName.toLowerCase().includes(search.toLowerCase()) ||
-        s.description.toLowerCase().includes(search.toLowerCase())
-      );
-    }
+    // Enrich with user information
+    const enrichedSkills = await Promise.all(
+      skills.map(async (skill) => {
+        const user = await userRepository.getUserById(skill.userId);
+        return {
+          ...skill,
+          userName: user?.name || 'Unknown',
+          userDepartment: user?.department || 'Unknown',
+          userYear: user?.year || 'Unknown'
+        };
+      })
+    );
 
-    const enriched = skills.map(skill => ({
-      ...skill,
-      userName: db.users[skill.userId]?.name || 'Unknown',
-      userDepartment: db.users[skill.userId]?.department || 'Unknown',
-      userYear: db.users[skill.userId]?.year || 'Unknown'
-    }));
-
-    res.json({ success: true, skills: enriched, count: enriched.length });
+    res.json({ success: true, skills: enrichedSkills, count: enrichedSkills.length });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to fetch skills' });
+    console.error('Get skills error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch skills', error: error.message });
   }
 });
 
-app.post('/api/skills', (req, res) => {
+app.post('/api/skills', async (req, res) => {
   try {
     const { userId, skillName, description } = req.body;
 
@@ -184,36 +134,39 @@ app.post('/api/skills', (req, res) => {
       return res.status(400).json({ success: false, message: 'User ID and skill name required' });
     }
 
-    if (!db.users[userId]) {
+    const user = await userRepository.getUserById(userId);
+    if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const skillId = uuidv4();
-    db.skills[skillId] = { skillId, userId, skillName, description: description || '', createdAt: new Date().toISOString() };
+    const skill = await skillRepository.createSkill(userId, skillName, description || '');
 
-    res.status(201).json({ success: true, message: 'Skill added', skill: db.skills[skillId] });
+    res.status(201).json({ success: true, message: 'Skill added', skill });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to add skill' });
+    console.error('Create skill error:', error);
+    res.status(500).json({ success: false, message: 'Failed to add skill', error: error.message });
   }
 });
 
-app.delete('/api/skills/:skillId', (req, res) => {
+app.delete('/api/skills/:skillId', async (req, res) => {
   try {
     const { skillId } = req.params;
 
-    if (!db.skills[skillId]) {
+    const skill = await skillRepository.getSkillById(skillId);
+    if (!skill) {
       return res.status(404).json({ success: false, message: 'Skill not found' });
     }
 
-    delete db.skills[skillId];
+    await skillRepository.deleteSkill(skillId);
     res.json({ success: true, message: 'Skill deleted successfully' });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to delete skill' });
+    console.error('Delete skill error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete skill', error: error.message });
   }
 });
 
 // ===== LEARNING REQUESTS =====
-app.post('/api/requests', (req, res) => {
+app.post('/api/requests', async (req, res) => {
   try {
     const { senderId, receiverId, skillId, skillName } = req.body;
 
@@ -225,226 +178,264 @@ app.post('/api/requests', (req, res) => {
       return res.status(400).json({ success: false, message: 'Cannot send request to yourself' });
     }
 
-    const requestId = uuidv4();
-    db.requests[requestId] = {
-      requestId,
-      senderId,
-      receiverId,
-      skillId,
-      skillName,
-      status: 'Pending',
-      createdAt: new Date().toISOString()
-    };
+    const request = await requestRepository.createRequest(senderId, receiverId, skillId, skillName);
 
-    res.status(201).json({ success: true, message: 'Request sent', request: db.requests[requestId] });
+    res.status(201).json({ success: true, message: 'Request sent', request });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to send request' });
+    console.error('Create request error:', error);
+    res.status(500).json({ success: false, message: 'Failed to send request', error: error.message });
   }
 });
 
-app.get('/api/requests/:userId', (req, res) => {
+app.get('/api/requests/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
 
-    if (!db.users[userId]) {
+    const user = await userRepository.getUserById(userId);
+    if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const received = Object.values(db.requests).filter(r => r.receiverId === userId);
-    const sent = Object.values(db.requests).filter(r => r.senderId === userId);
+    const requests = await requestRepository.getUserRequests(userId);
+
+    // Enrich with user information
+    const enrichedReceived = await Promise.all(
+      requests.received.map(async (r) => {
+        const sender = await userRepository.getUserById(r.senderId);
+        return {
+          ...r,
+          senderName: sender?.name || 'Unknown',
+          senderDepartment: sender?.department || 'Unknown'
+        };
+      })
+    );
+
+    const enrichedSent = await Promise.all(
+      requests.sent.map(async (r) => {
+        const receiver = await userRepository.getUserById(r.receiverId);
+        return {
+          ...r,
+          receiverName: receiver?.name || 'Unknown',
+          receiverDepartment: receiver?.department || 'Unknown'
+        };
+      })
+    );
 
     res.json({
       success: true,
-      receivedRequests: received.map(r => ({
-        ...r,
-        senderName: db.users[r.senderId]?.name || 'Unknown',
-        senderDepartment: db.users[r.senderId]?.department || 'Unknown'
-      })),
-      sentRequests: sent.map(r => ({
-        ...r,
-        receiverName: db.users[r.receiverId]?.name || 'Unknown',
-        receiverDepartment: db.users[r.receiverId]?.department || 'Unknown'
-      }))
+      receivedRequests: enrichedReceived,
+      sentRequests: enrichedSent
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to fetch requests' });
+    console.error('Get requests error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch requests', error: error.message });
   }
 });
 
-app.put('/api/requests/:requestId/accept', (req, res) => {
+app.put('/api/requests/:requestId/accept', async (req, res) => {
   try {
-    if (!db.requests[req.params.requestId]) {
+    const request = await requestRepository.acceptRequest(req.params.requestId);
+    if (!request) {
       return res.status(404).json({ success: false, message: 'Request not found' });
     }
-
-    db.requests[req.params.requestId].status = 'Accepted';
-    res.json({ success: true, message: 'Request accepted', request: db.requests[req.params.requestId] });
+    res.json({ success: true, message: 'Request accepted', request });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to accept request' });
+    console.error('Accept request error:', error);
+    res.status(500).json({ success: false, message: 'Failed to accept request', error: error.message });
   }
 });
 
-app.put('/api/requests/:requestId/reject', (req, res) => {
+app.put('/api/requests/:requestId/reject', async (req, res) => {
   try {
-    if (!db.requests[req.params.requestId]) {
+    const request = await requestRepository.rejectRequest(req.params.requestId);
+    if (!request) {
       return res.status(404).json({ success: false, message: 'Request not found' });
     }
-
-    db.requests[req.params.requestId].status = 'Rejected';
-    res.json({ success: true, message: 'Request rejected', request: db.requests[req.params.requestId] });
+    res.json({ success: true, message: 'Request rejected', request });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to reject request' });
+    console.error('Reject request error:', error);
+    res.status(500).json({ success: false, message: 'Failed to reject request', error: error.message });
   }
 });
 
 // ===== MATERIALS =====
-app.post('/api/materials', (req, res) => {
+app.post('/api/materials', upload.single('file'), async (req, res) => {
   try {
-    const { userId, title, description, fileName } = req.body;
+    const { userId, title, description } = req.body;
+    const file = req.file;
 
-    if (!userId || !title || !fileName) {
-      return res.status(400).json({ success: false, message: 'User ID, title, and file name required' });
+    if (!userId || !title || !file) {
+      return res.status(400).json({ success: false, message: 'User ID, title, and file required' });
     }
 
-    if (!db.users[userId]) {
+    const user = await userRepository.getUserById(userId);
+    if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const materialId = uuidv4();
-    db.materials[materialId] = {
-      materialId,
+    // Upload file to S3
+    const s3Key = `materials/${userId}/${Date.now()}-${file.originalname}`;
+    const uploadResult = await s3Service.uploadFile(S3_BUCKET, s3Key, file.buffer, file.mimetype, {
+      userId,
+      fileName: file.originalname
+    });
+
+    // Create material record in DynamoDB
+    const material = await materialRepository.createMaterial(
       userId,
       title,
-      description: description || '',
-      fileName,
-      s3Key: `materials/${userId}/${fileName}`,
-      fileUrl: `/files/${materialId}`,
-      createdAt: new Date().toISOString()
-    };
+      description || '',
+      file.originalname,
+      s3Key,
+      uploadResult.url
+    );
 
-    res.status(201).json({ success: true, message: 'Material uploaded', material: db.materials[materialId] });
+    res.status(201).json({ success: true, message: 'Material uploaded', material });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to upload material' });
+    console.error('Upload material error:', error);
+    res.status(500).json({ success: false, message: 'Failed to upload material', error: error.message });
   }
 });
 
-app.get('/api/materials', (req, res) => {
+app.get('/api/materials', async (req, res) => {
   try {
     const { userId } = req.query;
-    let materials = Object.values(db.materials);
+    let materials;
 
     if (userId) {
-      materials = materials.filter(m => m.userId === userId);
+      materials = await materialRepository.getMaterialsByUserId(userId);
+    } else {
+      materials = await materialRepository.getAllMaterials();
     }
 
-    const enriched = materials.map(m => ({
-      ...m,
-      userName: db.users[m.userId]?.name || 'Unknown'
-    }));
+    // Enrich with user information
+    const enriched = await Promise.all(
+      materials.map(async (m) => {
+        const user = await userRepository.getUserById(m.userId);
+        return {
+          ...m,
+          userName: user?.name || 'Unknown'
+        };
+      })
+    );
 
     res.json({ success: true, materials: enriched, count: enriched.length });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to fetch materials' });
+    console.error('Get materials error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch materials', error: error.message });
   }
 });
 
-app.delete('/api/materials/:materialId', (req, res) => {
+app.delete('/api/materials/:materialId', async (req, res) => {
   try {
     const { materialId } = req.params;
 
-    if (!db.materials[materialId]) {
+    const material = await materialRepository.getMaterialById(materialId);
+    if (!material) {
       return res.status(404).json({ success: false, message: 'Material not found' });
     }
 
-    delete db.materials[materialId];
+    // Delete from S3
+    await s3Service.deleteFile(S3_BUCKET, material.s3Key);
+
+    // Delete from DynamoDB
+    await materialRepository.deleteMaterial(materialId);
+
     res.json({ success: true, message: 'Material deleted successfully' });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to delete material' });
+    console.error('Delete material error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete material', error: error.message });
   }
 });
 
-app.get('/download/:materialId', (req, res) => {
+app.get('/download/:materialId', async (req, res) => {
   try {
     const { materialId } = req.params;
 
-    if (!db.materials[materialId]) {
+    const material = await materialRepository.getMaterialById(materialId);
+    if (!material) {
       return res.status(404).json({ success: false, message: 'Material not found' });
     }
 
-    const material = db.materials[materialId];
-    
-    // For mock purposes, create a text file with material info
-    // In production, this would download from S3
-    const fileContent = `Material: ${material.title}\nDescription: ${material.description}\nUploaded: ${material.createdAt}`;
-    
-    res.setHeader('Content-Disposition', `attachment; filename="${material.fileName}"`);
-    res.setHeader('Content-Type', 'text/plain');
-    res.send(fileContent);
+    // Get presigned URL for download
+    const presignedUrl = await s3Service.getPresignedDownloadUrl(S3_BUCKET, material.s3Key, 3600);
+
+    // Redirect to presigned URL
+    res.redirect(presignedUrl);
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to download material' });
+    console.error('Download material error:', error);
+    res.status(500).json({ success: false, message: 'Failed to download material', error: error.message });
   }
 });
 
 // ===== PROFILE =====
-app.get('/api/profile/:userId', (req, res) => {
+app.get('/api/profile/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
 
-    if (!db.users[userId]) {
+    const user = await userRepository.getUserById(userId);
+    if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const user = db.users[userId];
-    const skills = Object.values(db.skills).filter(s => s.userId === userId);
+    const skills = await skillRepository.getSkillsByUserId(userId);
 
     res.json({
       success: true,
-      user: { userId: user.userId, name: user.name, email: user.email, department: user.department, year: user.year, bio: user.bio },
+      user,
       skills
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to fetch profile' });
+    console.error('Get profile error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch profile', error: error.message });
   }
 });
 
-app.put('/api/profile/:userId', (req, res) => {
+app.put('/api/profile/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
     const { name, department, year, bio } = req.body;
 
-    if (!db.users[userId]) {
+    const user = await userRepository.getUserById(userId);
+    if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    if (name) db.users[userId].name = name;
-    if (department) db.users[userId].department = department;
-    if (year) db.users[userId].year = year;
-    if (bio !== undefined) db.users[userId].bio = bio;
+    const updates = {};
+    if (name) updates.name = name;
+    if (department) updates.department = department;
+    if (year) updates.year = year;
+    if (bio !== undefined) updates.bio = bio;
 
-    const user = db.users[userId];
+    const updatedUser = await userRepository.updateUserProfile(userId, updates);
+
     res.json({
       success: true,
       message: 'Profile updated successfully',
-      user: { userId: user.userId, name: user.name, email: user.email, department: user.department, year: user.year, bio: user.bio }
+      user: updatedUser
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to update profile' });
+    console.error('Update profile error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update profile', error: error.message });
   }
 });
 
 // ===== DASHBOARD =====
-app.get('/api/dashboard/:userId', (req, res) => {
+app.get('/api/dashboard/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
 
-    if (!db.users[userId]) {
+    const user = await userRepository.getUserById(userId);
+    if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const userSkills = Object.values(db.skills).filter(s => s.userId === userId);
-    const userMaterials = Object.values(db.materials).filter(m => m.userId === userId);
-    const pendingRequests = Object.values(db.requests).filter(r => r.receiverId === userId && r.status === 'Pending');
-    const acceptedRequests = Object.values(db.requests).filter(r => (r.receiverId === userId || r.senderId === userId) && r.status === 'Accepted');
+    const userSkills = await skillRepository.getSkillsByUserId(userId);
+    const userMaterials = await materialRepository.getMaterialsByUserId(userId);
+    const requests = await requestRepository.getUserRequests(userId);
+
+    const pendingRequests = requests.received.filter(r => r.status === 'Pending');
+    const acceptedRequests = requests.received.filter(r => r.status === 'Accepted');
 
     res.json({
       success: true,
@@ -456,13 +447,17 @@ app.get('/api/dashboard/:userId', (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to fetch dashboard stats' });
+    console.error('Get dashboard error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch dashboard stats', error: error.message });
   }
 });
 
 // ===== START SERVER =====
-
 app.listen(PORT, () => {
   console.log(`Campus Skill Exchange Portal running on http://localhost:${PORT}`);
-  console.log('Using mock data for local development');
+  if (USE_MOCK_DATA) {
+    console.log('Using mock data for local development');
+  } else {
+    console.log('Using AWS DynamoDB and S3');
+  }
 });
