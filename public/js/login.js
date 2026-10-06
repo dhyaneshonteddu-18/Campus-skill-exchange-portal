@@ -18,6 +18,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     });
 
     if (response.success) {
+      // Store full user object including userId
       setCurrentUser(response.user);
       showAlert('Login successful! Redirecting...', 'success');
       setTimeout(() => {

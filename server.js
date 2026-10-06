@@ -197,6 +197,21 @@ app.post('/api/skills', (req, res) => {
   }
 });
 
+app.delete('/api/skills/:skillId', (req, res) => {
+  try {
+    const { skillId } = req.params;
+
+    if (!db.skills[skillId]) {
+      return res.status(404).json({ success: false, message: 'Skill not found' });
+    }
+
+    delete db.skills[skillId];
+    res.json({ success: true, message: 'Skill deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to delete skill' });
+  }
+});
+
 // ===== LEARNING REQUESTS =====
 app.post('/api/requests', (req, res) => {
   try {
@@ -367,6 +382,81 @@ app.get('/download/:materialId', (req, res) => {
     res.send(fileContent);
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to download material' });
+  }
+});
+
+// ===== PROFILE =====
+app.get('/api/profile/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!db.users[userId]) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const user = db.users[userId];
+    const skills = Object.values(db.skills).filter(s => s.userId === userId);
+
+    res.json({
+      success: true,
+      user: { userId: user.userId, name: user.name, email: user.email, department: user.department, year: user.year, bio: user.bio },
+      skills
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch profile' });
+  }
+});
+
+app.put('/api/profile/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { name, department, year, bio } = req.body;
+
+    if (!db.users[userId]) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (name) db.users[userId].name = name;
+    if (department) db.users[userId].department = department;
+    if (year) db.users[userId].year = year;
+    if (bio !== undefined) db.users[userId].bio = bio;
+
+    const user = db.users[userId];
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: { userId: user.userId, name: user.name, email: user.email, department: user.department, year: user.year, bio: user.bio }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to update profile' });
+  }
+});
+
+// ===== DASHBOARD =====
+app.get('/api/dashboard/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!db.users[userId]) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const userSkills = Object.values(db.skills).filter(s => s.userId === userId);
+    const userMaterials = Object.values(db.materials).filter(m => m.userId === userId);
+    const pendingRequests = Object.values(db.requests).filter(r => r.receiverId === userId && r.status === 'Pending');
+    const acceptedRequests = Object.values(db.requests).filter(r => (r.receiverId === userId || r.senderId === userId) && r.status === 'Accepted');
+
+    res.json({
+      success: true,
+      stats: {
+        skillCount: userSkills.length,
+        materialCount: userMaterials.length,
+        pendingRequests: pendingRequests.length,
+        acceptedRequests: acceptedRequests.length
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch dashboard stats' });
   }
 });
 
