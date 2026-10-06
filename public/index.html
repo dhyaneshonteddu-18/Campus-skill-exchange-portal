@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Campus Skill Exchange Portal</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Navigation -->
+  <nav class="navbar navbar-expand-lg navbar-dark">
+    <div class="container">
+      <a class="navbar-brand" href="/">🎓 Skill Exchange</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav ms-auto">
+          <li class="nav-item">
+            <a class="nav-link" id="nav-login" href="login.html">Login</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" id="nav-register" href="register.html">Register</a>
+          </li>
+          <li class="nav-item hidden">
+            <a class="nav-link" id="nav-dashboard" href="dashboard.html">Dashboard</a>
+          </li>
+          <li class="nav-item hidden">
+            <a class="nav-link" id="nav-profile" href="profile.html">Profile</a>
+          </li>
+          <li class="nav-item hidden">
+            <a class="nav-link" id="nav-skills" href="skills.html">Find Skills</a>
+          </li>
+          <li class="nav-item hidden">
+            <a class="nav-link" id="nav-requests" href="requests.html">Requests</a>
+          </li>
+          <li class="nav-item hidden">
+            <a class="nav-link" id="nav-materials" href="materials.html">Materials</a>
+          </li>
+          <li class="nav-item hidden">
+            <a class="nav-link" id="nav-logout" href="#" onclick="logout(); return false;">Logout</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="hero-section">
+    <div class="container">
+      <h1>Campus Skill Exchange Portal</h1>
+      <p>Connect with your peers, share your skills, and grow together</p>
+      <div class="cta-buttons">
+        <a href="login.html" class="btn btn-primary-light">Login</a>
+        <a href="register.html" class="btn btn-outline-light">Register</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Section -->
+  <section class="feature-section">
+    <div class="container">
+      <h2 class="text-center mb-40">Why Choose Skill Exchange?</h2>
+      
+      <div class="feature-cards">
+        <div class="feature-card">
+          <div class="feature-icon">📚</div>
+          <h3>Share Skills</h3>
+          <p>Teach what you know best to your peers. Add your skills and help others learn from your expertise.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔍</div>
+          <h3>Find Students</h3>
+          <p>Search for students with the skills you want to learn. Connect with the right mentor for your needs.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🤝</div>
+          <h3>Exchange Knowledge</h3>
+          <p>Send learning requests and accept offers. Track your learning journey with status updates.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📄</div>
+          <h3>Share Materials</h3>
+          <p>Upload and share learning materials (PDFs, docs, presentations) to enhance collaborative learning.</p>
+        </div>
+      </div>
+
+      <div style="background-color: #f0f9ff; padding: 40px; border-radius: 10px; margin-top: 60px;">
+        <h3 class="text-center mb-20">How It Works</h3>
+        <div class="row">
+          <div class="col-md-3 text-center mb-20">
+            <h4 style="color: var(--primary-color);">1. Sign Up</h4>
+            <p>Create your account and build your profile with your details and initial skills.</p>
+          </div>
+          <div class="col-md-3 text-center mb-20">
+            <h4 style="color: var(--primary-color);">2. Add Skills</h4>
+            <p>Add the skills you can teach and provide descriptions of your expertise.</p>
+          </div>
+          <div class="col-md-3 text-center mb-20">
+            <h4 style="color: var(--primary-color);">3. Find & Connect</h4>
+            <p>Search for skills you want to learn and send requests to students offering them.</p>
+          </div>
+          <div class="col-md-3 text-center mb-20">
+            <h4 style="color: var(--primary-color);">4. Learn Together</h4>
+            <p>Accept connections, share materials, and grow through peer-to-peer learning.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <p>&copy; 2024 Campus Skill Exchange Portal. All rights reserved.</p>
+    <p>Built with ❤️ for student collaboration</p>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/common.js"></script>
+</body>
+</html>

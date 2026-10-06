@@ -1,0 +1,26 @@
+{
+  "name": "campus-skill-exchange",
+  "version": "1.0.0",
+  "description": "A web application for students to exchange skills and learning materials",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "skills",
+    "exchange",
+    "students",
+    "learning"
+  ],
+  "author": "Student",
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "body-parser": "^1.20.8",
+    "cors": "^2.8.6",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.3",
+    "uuid": "^9.0.1"
+  }
+}
