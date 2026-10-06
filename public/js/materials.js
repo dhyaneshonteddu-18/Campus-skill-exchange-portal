@@ -87,9 +87,12 @@ function displayAllMaterials(materials) {
 }
 
 function downloadMaterial(materialId, fileName) {
-  // In a real implementation with S3, this would download from S3
-  showAlert(`Download initiated for: ${fileName}`, 'info');
-  // window.location.href = `/download/${materialId}`;
+  try {
+    // Trigger download from server
+    window.location.href = `/download/${materialId}`;
+  } catch (error) {
+    showAlert('Failed to download material', 'danger');
+  }
 }
 
 async function deleteMaterial(materialId) {

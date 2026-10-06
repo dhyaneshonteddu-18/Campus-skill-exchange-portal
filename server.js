@@ -56,7 +56,28 @@ const db = {
     'skill4': { skillId: 'skill4', userId: 'user2', skillName: 'SQL', description: 'Database design and SQL queries', createdAt: new Date().toISOString() }
   },
   requests: {},
-  materials: {}
+  materials: {
+    'material1': {
+      materialId: 'material1',
+      userId: 'user1',
+      title: 'Java',
+      description: 'Master Java programming fundamentals',
+      fileName: 'AWS_architecture.png',
+      s3Key: 'materials/user1/AWS_architecture.png',
+      fileUrl: '/files/material1',
+      createdAt: new Date().toISOString()
+    },
+    'material2': {
+      materialId: 'material2',
+      userId: 'user2',
+      title: 'Python Basics',
+      description: 'Introduction to Python programming',
+      fileName: 'python_guide.pdf',
+      s3Key: 'materials/user2/python_guide.pdf',
+      fileUrl: '/files/material2',
+      createdAt: new Date().toISOString()
+    }
+  }
 };
 
 
@@ -309,6 +330,43 @@ app.get('/api/materials', (req, res) => {
     res.json({ success: true, materials: enriched, count: enriched.length });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch materials' });
+  }
+});
+
+app.delete('/api/materials/:materialId', (req, res) => {
+  try {
+    const { materialId } = req.params;
+
+    if (!db.materials[materialId]) {
+      return res.status(404).json({ success: false, message: 'Material not found' });
+    }
+
+    delete db.materials[materialId];
+    res.json({ success: true, message: 'Material deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to delete material' });
+  }
+});
+
+app.get('/download/:materialId', (req, res) => {
+  try {
+    const { materialId } = req.params;
+
+    if (!db.materials[materialId]) {
+      return res.status(404).json({ success: false, message: 'Material not found' });
+    }
+
+    const material = db.materials[materialId];
+    
+    // For mock purposes, create a text file with material info
+    // In production, this would download from S3
+    const fileContent = `Material: ${material.title}\nDescription: ${material.description}\nUploaded: ${material.createdAt}`;
+    
+    res.setHeader('Content-Disposition', `attachment; filename="${material.fileName}"`);
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(fileContent);
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to download material' });
   }
 });
 
