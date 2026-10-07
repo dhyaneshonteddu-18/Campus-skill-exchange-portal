@@ -316,12 +316,14 @@ app.get('/api/materials', async (req, res) => {
         const user = await userRepository.getUserById(m.userId);
         let canDownload = false;
 
-        // Check if requester has accepted request from uploader
+        // Check if requester has access to download
         if (requesterId && requesterId !== m.userId) {
-          const requests = await requestRepository.getUserRequests(requesterId);
-          // Check if there's an accepted request from requester to uploader
-          canDownload = requests.sent.some(r => 
-            r.receiverId === m.userId && r.status === 'Accepted'
+          // Get the material owner's received requests
+          const materialOwnerRequests = await requestRepository.getReceivedRequests(m.userId);
+          
+          // Check if material owner accepted a request from requester
+          canDownload = materialOwnerRequests.some(r => 
+            r.senderId === requesterId && r.status === 'Accepted'
           );
         }
 
@@ -384,10 +386,12 @@ app.get('/download/:materialId', async (req, res) => {
       // Owner can always download their own materials
       hasAccess = true;
     } else {
-      // Check if user has accepted request from material owner
-      const requests = await requestRepository.getUserRequests(userId);
-      hasAccess = requests.sent.some(r => 
-        r.receiverId === material.userId && r.status === 'Accepted'
+      // Get material owner's received requests
+      const materialOwnerRequests = await requestRepository.getReceivedRequests(material.userId);
+      
+      // Check if material owner accepted request from this user
+      hasAccess = materialOwnerRequests.some(r => 
+        r.senderId === userId && r.status === 'Accepted'
       );
     }
 
