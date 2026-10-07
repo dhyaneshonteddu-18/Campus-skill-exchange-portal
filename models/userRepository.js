@@ -89,23 +89,31 @@ class UserRepository {
     try {
       const updateExpression = [];
       const expressionAttributeValues = {};
+      const expressionAttributeNames = {};
       const allowedFields = ['name', 'department', 'year', 'bio'];
+      let index = 0;
 
-      Object.keys(updates).forEach((key, index) => {
+      Object.keys(updates).forEach((key) => {
         if (allowedFields.includes(key)) {
-          updateExpression.push(`${key} = :val${index}`);
+          // Use ExpressionAttributeNames for reserved keywords
+          const nameKey = `#${key}`;
+          expressionAttributeNames[nameKey] = key;
+          updateExpression.push(`${nameKey} = :val${index}`);
           expressionAttributeValues[`:val${index}`] = updates[key];
+          index++;
         }
       });
 
-      updateExpression.push('updatedAt = :updatedAt');
+      updateExpression.push('#updatedAt = :updatedAt');
+      expressionAttributeNames['#updatedAt'] = 'updatedAt';
       expressionAttributeValues[':updatedAt'] = new Date().toISOString();
 
       const updated = await dynamodbService.updateItem(
         TABLE_NAME,
         { userId },
         `SET ${updateExpression.join(', ')}`,
-        expressionAttributeValues
+        expressionAttributeValues,
+        expressionAttributeNames
       );
 
       return this._sanitizeUser(updated);
