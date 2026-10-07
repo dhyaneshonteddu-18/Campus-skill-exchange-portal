@@ -299,22 +299,36 @@ app.post('/api/materials', upload.single('file'), async (req, res) => {
 
 app.get('/api/materials', async (req, res) => {
   try {
-    const { userId } = req.query;
+    const { userId, requesterId } = req.query;
     let materials;
 
     if (userId) {
+      // Get materials for specific user (owner only sees their own)
       materials = await materialRepository.getMaterialsByUserId(userId);
     } else {
+      // Get all materials available to requester
       materials = await materialRepository.getAllMaterials();
     }
 
-    // Enrich with user information
+    // Enrich with user information and access permission
     const enriched = await Promise.all(
       materials.map(async (m) => {
         const user = await userRepository.getUserById(m.userId);
+        let canDownload = false;
+
+        // Check if requester has accepted request from uploader
+        if (requesterId && requesterId !== m.userId) {
+          const requests = await requestRepository.getUserRequests(requesterId);
+          // Check if there's an accepted request from requester to uploader
+          canDownload = requests.sent.some(r => 
+            r.receiverId === m.userId && r.status === 'Accepted'
+          );
+        }
+
         return {
           ...m,
-          userName: user?.name || 'Unknown'
+          userName: user?.name || 'Unknown',
+          canDownload: canDownload || (requesterId === m.userId) // Owner can always download
         };
       })
     );
@@ -351,13 +365,37 @@ app.delete('/api/materials/:materialId', async (req, res) => {
 app.get('/download/:materialId', async (req, res) => {
   try {
     const { materialId } = req.params;
+    const { userId } = req.query; // Requester user ID
 
     const material = await materialRepository.getMaterialById(materialId);
     if (!material) {
       return res.status(404).json({ success: false, message: 'Material not found' });
     }
 
-    // Get presigned URL for download
+    // Check access permissions
+    let hasAccess = false;
+
+    if (!userId) {
+      // No user ID provided
+      return res.status(401).json({ success: false, message: 'User authentication required' });
+    }
+
+    if (userId === material.userId) {
+      // Owner can always download their own materials
+      hasAccess = true;
+    } else {
+      // Check if user has accepted request from material owner
+      const requests = await requestRepository.getUserRequests(userId);
+      hasAccess = requests.sent.some(r => 
+        r.receiverId === material.userId && r.status === 'Accepted'
+      );
+    }
+
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, message: 'Access denied. Only accepted connections can download materials.' });
+    }
+
+    // Generate presigned URL for download
     const presignedUrl = await s3Service.getPresignedDownloadUrl(S3_BUCKET, material.s3Key, 3600);
 
     // Redirect to presigned URL

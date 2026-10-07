@@ -12,8 +12,8 @@ async function loadMaterials() {
       displayUserMaterials(userResponse.materials);
     }
 
-    // Load all materials
-    const allResponse = await apiCall('/api/materials');
+    // Load all materials with access control
+    const allResponse = await apiCall(`/api/materials?requesterId=${currentUser.userId}`);
     if (allResponse.success) {
       displayAllMaterials(allResponse.materials);
     }
@@ -62,6 +62,17 @@ function displayAllMaterials(materials) {
 
   container.innerHTML = materials.map(material => {
     const isOwner = material.userId === currentUser.userId;
+    const canDownload = material.canDownload;
+    
+    let downloadButton = '';
+    if (isOwner) {
+      downloadButton = `<span class="badge badge-success">Your Material</span>`;
+    } else if (canDownload) {
+      downloadButton = `<button class="btn btn-primary btn-sm" onclick="downloadMaterial('${material.materialId}', '${material.fileName}')">Download</button>`;
+    } else {
+      downloadButton = `<span class="badge badge-warning">Access Restricted<br/><small>Send skill request to get access</small></span>`;
+    }
+
     return `
       <div class="card mb-20">
         <div class="card-body">
@@ -74,10 +85,7 @@ function displayAllMaterials(materials) {
               <small class="text-muted">Uploaded: ${formatDate(material.createdAt)}</small>
             </div>
             <div>
-              ${!isOwner 
-                ? `<button class="btn btn-primary btn-sm" onclick="downloadMaterial('${material.materialId}', '${material.fileName}')">Download</button>`
-                : `<span class="badge badge-primary">Your Material</span>`
-              }
+              ${downloadButton}
             </div>
           </div>
         </div>
@@ -88,8 +96,9 @@ function displayAllMaterials(materials) {
 
 function downloadMaterial(materialId, fileName) {
   try {
-    // Trigger download from server
-    window.location.href = `/download/${materialId}`;
+    const currentUser = getCurrentUser();
+    // Trigger download from server with user authentication
+    window.location.href = `/download/${materialId}?userId=${currentUser.userId}`;
   } catch (error) {
     showAlert('Failed to download material', 'danger');
   }
